@@ -2,7 +2,7 @@
 
 本次實驗的目標，是針對模型上一次推論錯誤的輸入樣本進行權重修正。
 
-模型原本在輸入 `x` 時，輸出錯誤答案：
+模型原本輸出錯誤答案：
 
 ```text
 Pred = cervical spondylosis
@@ -11,14 +11,10 @@ Pred = cervical spondylosis
 但正確答案，也就是本次 feedback editing 的 target，是：
 
 ```text
-t = radiculopathy
-```
-
-因此，本次更新的目的不是讓模型學習錯誤答案，而是讓模型學習正確 target：
-
-```text
 target = radiculopathy
 ```
+
+因此，本次方法不是讓模型學習錯誤答案，而是把正確答案 `radiculopathy` 當作 target，透過 loss 反向傳播更新模型權重，使模型下次對同一個輸入能輸出正確答案。
 
 ---
 
@@ -30,217 +26,243 @@ Pred:    cervical spondylosis
 Correct: NO
 ```
 
-也就是說，更新前模型的輸出可以表示為：
+更新前模型可以表示為：
 
-$$
-f_{\theta_{old}}(x) = \text{cervical spondylosis}
-$$
+```text
+Model(x; θ_old) = cervical spondylosis
+```
 
-但我們希望模型輸出的正確 target 是：
+其中：
 
-$$
-t = \text{radiculopathy}
-$$
+```text
+x = 上一次輸入
+θ_old = 更新前的模型權重
+```
 
-因此更新前模型是錯誤的：
+但本次真正希望模型輸出的 target 是：
 
-$$
-f_{\theta_{old}}(x) \neq t
-$$
+```text
+t = radiculopathy
+```
+
+所以更新前的狀態是：
+
+```text
+Model(x; θ_old) ≠ t
+```
+
+也就是模型答錯了。
 
 ---
 
 ## Target 定義
 
-本次 editing 的目標答案為：
+本次 editing 的 target 是正確答案：
 
-$$
-t = \text{radiculopathy}
-$$
+```text
+t = radiculopathy
+```
 
-我們希望更新權重後，模型對同一個輸入 `x` 的輸出變成：
+我們希望權重更新後，模型變成：
 
-$$
-f_{\theta_{new}}(x) = t
-$$
+```text
+Model(x; θ_new) = radiculopathy
+```
 
 也就是：
 
-$$
-f_{\theta_{new}}(x) = \text{radiculopathy}
-$$
+```text
+Model(x; θ_new) = t
+```
+
+其中：
+
+```text
+θ_new = 更新後的模型權重
+```
 
 ---
 
 ## Loss Function
 
-為了讓模型更傾向輸出正確 target `t`，使用 negative log-likelihood loss：
+為了讓模型更傾向輸出 target `radiculopathy`，使用 negative log-likelihood loss。
 
-$$
-\mathcal{L}(\theta) = -\log P_{\theta}(t \mid x)
-$$
+簡單公式如下：
+
+```text
+L(θ) = -log Pθ(t | x)
+```
 
 其中：
 
-$$
-P_{\theta}(t \mid x)
-$$
+```text
+L(θ)
+```
+
+代表模型目前的 loss。
+
+```text
+Pθ(t | x)
+```
 
 代表模型在輸入 `x` 時，輸出 target `t` 的機率。
 
 在本次實驗中：
 
-$$
-t = \text{radiculopathy}
-$$
+```text
+t = radiculopathy
+```
 
-所以 loss 可以理解為：
-
-$$
-\mathcal{L}(\theta) = -\log P_{\theta}(\text{radiculopathy} \mid x)
-$$
-
-當 loss 越小，代表模型越傾向輸出：
+所以 loss 可以寫成：
 
 ```text
-radiculopathy
+L(θ) = -log Pθ(radiculopathy | x)
 ```
+
+意思是：
+
+```text
+如果模型輸出 radiculopathy 的機率越高，loss 就越低。
+如果模型輸出 radiculopathy 的機率越低，loss 就越高。
+```
+
+因此，降低 loss 的目的就是提高模型輸出正確 target 的機率。
 
 ---
 
-## 基本反向傳播與權重更新
+## 權重更新公式
 
-模型會先計算 loss：
+本次使用梯度下降更新模型權重。
 
-$$
-\mathcal{L}(\theta)
-$$
-
-接著用微分計算 loss 對權重的梯度：
-
-$$
-\nabla_{\theta}\mathcal{L}(\theta)
-$$
-
-這個梯度代表：
+簡單公式如下：
 
 ```text
-如果要讓 loss 下降，權重應該往哪個方向修改
+θ_new = θ_old - η × gradient
 ```
-
-因此使用梯度下降更新權重：
-
-$$
-\theta_{new}
-=
-\theta_{old}
--
-\eta \nabla_{\theta}\mathcal{L}(\theta_{old})
-$$
 
 其中：
 
-$$
-\theta_{old}
-$$
+```text
+θ_old
+```
 
-是更新前的模型權重。
+代表更新前的模型權重。
 
-$$
-\theta_{new}
-$$
+```text
+θ_new
+```
 
-是更新後的模型權重。
+代表更新後的模型權重。
 
-$$
-\eta
-$$
+```text
+η
+```
 
-是 learning rate。
+代表 learning rate，也就是每次更新的步伐大小。
 
-$$
-\nabla_{\theta}\mathcal{L}(\theta_{old})
-$$
+```text
+gradient
+```
 
-是 loss 對模型權重的梯度。
+代表 loss 對模型權重的梯度，也就是模型應該往哪個方向修改權重，才能讓 loss 下降。
+
+更完整地寫，可以表示為：
+
+```text
+θ_new = θ_old - η × ∇θ L(θ_old)
+```
+
+其中：
+
+```text
+∇θ L(θ_old)
+```
+
+代表在目前權重 `θ_old` 下，loss 對模型權重的梯度。
 
 ---
 
 ## 加入 Mask 的權重更新
 
-本次更新有使用 allowed token mask，因此只保留允許更新的梯度部分。
+本次實驗有使用 allowed token mask，因此不是所有梯度都直接拿來更新，而是只保留允許更新的部分。
 
-權重更新可寫成：
-
-$$
-\theta_{new}
-=
-\theta_{old}
--
-\eta \, \mathrm{Mask}
-\left(
-\nabla_{\theta}\mathcal{L}(\theta_{old})
-\right)
-$$
-
-也就是：
+公式可以簡化成：
 
 ```text
-先計算 loss
-再反向傳播得到梯度
-接著用 Mask 保留需要的梯度
-最後更新模型權重
+θ_new = θ_old - η × Mask(∇θ L(θ_old))
 ```
 
-權重變化量可以表示為：
+其中：
 
-$$
-\Delta \theta
-=
-\theta_{new} - \theta_{old}
-$$
+```text
+Mask(...)
+```
 
-因此：
+代表只保留 allowed update token ids 對應的梯度，避免不相關 token 對權重造成太多影響。
 
-$$
-\Delta \theta
-=
--
-\eta \, \mathrm{Mask}
-\left(
-\nabla_{\theta}\mathcal{L}(\theta_{old})
-\right)
-$$
+也就是說，本次權重更新流程可以理解為：
 
-log 中的 `update norm` 可以理解為：
+```text
+1. 設定 target = radiculopathy
+2. 計算 loss = -log Pθ(radiculopathy | x)
+3. 反向傳播取得 gradient
+4. 使用 Mask 保留允許更新的梯度
+5. 更新模型權重 θ
+```
 
-$$
-\|\Delta \theta\|
-$$
+---
 
-也就是每一步權重實際被修改的幅度。
+## 權重變化量
+
+每一步實際修改的權重差異可以表示為：
+
+```text
+Δθ = θ_new - θ_old
+```
+
+因為：
+
+```text
+θ_new = θ_old - η × Mask(∇θ L(θ_old))
+```
+
+所以：
+
+```text
+Δθ = -η × Mask(∇θ L(θ_old))
+```
+
+log 裡面的 `update norm` 可以理解為：
+
+```text
+||Δθ||
+```
+
+也就是每一步模型權重實際被修改的幅度。
 
 ---
 
 ## Loss 收斂結果
 
-本次 feedback editing 的 loss 從：
+本次 feedback editing 共進行 30 steps。
 
-$$
+loss 從：
+
+```text
 2.705394
-$$
+```
 
 下降到：
 
-$$
+```text
 0.000008
-$$
+```
 
-可表示為：
+可以表示為：
 
-$$
-2.705394 \rightarrow 0.000008
-$$
+```text
+loss: 2.705394 → 0.000008
+```
 
 loss 過程如下：
 
@@ -277,31 +299,29 @@ Step 29 | loss = 0.000013
 Step 30 | loss = 0.000008
 ```
 
-因為 loss 定義為：
+這表示模型對 target `radiculopathy` 的預測機率逐步提高。
 
-$$
-\mathcal{L}(\theta) = -\log P_{\theta}(t \mid x)
-$$
-
-所以當 loss 下降時，代表：
-
-$$
-P_{\theta}(t \mid x)
-$$
-
-正在上升。
-
-也就是模型越來越傾向輸出正確 target：
+因為 loss 是：
 
 ```text
-radiculopathy
+L(θ) = -log Pθ(radiculopathy | x)
 ```
+
+所以：
+
+```text
+loss 越大  → 模型越不確定 radiculopathy
+loss 越小  → 模型越傾向輸出 radiculopathy
+loss 接近 0 → 模型幾乎非常確定輸出 radiculopathy
+```
+
+本次 loss 從 `2.705394` 收斂到 `0.000008`，代表模型已經成功學到這次 target。
 
 ---
 
 ## After Feedback
 
-更新後模型輸出為：
+更新後模型輸出：
 
 ```text
 GT:      radiculopathy
@@ -311,11 +331,11 @@ Correct: YES
 
 也就是：
 
-$$
-f_{\theta_{new}}(x) = \text{radiculopathy}
-$$
+```text
+Model(x; θ_new) = radiculopathy
+```
 
-因此模型從原本的錯誤輸出：
+模型從原本的錯誤輸出：
 
 ```text
 cervical spondylosis
@@ -331,7 +351,7 @@ radiculopathy
 
 ## 總結
 
-本次方法可以簡化為：
+本次方法可以簡化成：
 
 ```text
 更新前：
@@ -344,7 +364,7 @@ loss：
 L(θ) = -log Pθ(t | x)
 
 權重更新：
-θ_new = θ_old - η Mask(∇θ L(θ_old))
+θ_new = θ_old - η × Mask(∇θ L(θ_old))
 
 更新後：
 x → radiculopathy
@@ -352,22 +372,16 @@ x → radiculopathy
 
 其中最重要的是：
 
-$$
-t = \text{radiculopathy}
-$$
+```text
+target = radiculopathy
+```
 
-也就是本次 feedback editing 的 target 是正確答案 `radiculopathy`。
+而不是錯誤答案 `cervical spondylosis`。
 
-最終 loss 從：
+最終 loss：
 
-$$
-2.705394
-$$
+```text
+2.705394 → 0.000008
+```
 
-下降到：
-
-$$
-0.000008
-$$
-
-表示模型對 target `radiculopathy` 的生成機率大幅提高，權重修正成功。
+表示模型對正確 target `radiculopathy` 的生成機率大幅提高，因此本次 feedback editing 的權重修正成功。
