@@ -1,19 +1,24 @@
 # ROME Sequential Feedback Editing 說明
 
-本次實驗的目標，是針對模型上一次推論錯誤的輸入樣本進行權重修正。  
-模型原本在輸入 `x` 時輸出錯誤答案：
+本次實驗的目標，是針對模型上一次推論錯誤的輸入樣本進行權重修正。
+
+模型原本在輸入 `x` 時，輸出錯誤答案：
 
 ```text
-ŷ_old = cervical spondylosis
+Pred = cervical spondylosis
 ```
 
-但該樣本的正確答案，也就是本次 editing 的 target，應該是：
+但正確答案，也就是本次 feedback editing 的 target，是：
 
 ```text
 t = radiculopathy
 ```
 
-因此，本次方法不是讓模型學習錯誤答案，而是使用正確答案 `radiculopathy` 作為最佳化目標，透過 loss 反向傳播更新模型權重，使模型下次對相同輸入能輸出正確答案。
+因此，本次更新的目的不是讓模型學習錯誤答案，而是讓模型學習正確 target：
+
+```text
+target = radiculopathy
+```
 
 ---
 
@@ -25,197 +30,219 @@ Pred:    cervical spondylosis
 Correct: NO
 ```
 
-更新前模型可表示為：
+也就是說，更新前模型的輸出可以表示為：
 
-```math
-f_{\theta_{old}}(x) = \hat{y}_{old}
-```
+$$
+f_{\theta_{old}}(x) = \text{cervical spondylosis}
+$$
 
-其中：
+但我們希望模型輸出的正確 target 是：
 
-```math
-\hat{y}_{old} = \text{cervical spondylosis}
-```
-
-但正確答案為：
-
-```math
+$$
 t = \text{radiculopathy}
-```
+$$
 
-因此：
+因此更新前模型是錯誤的：
 
-```math
-f_{\theta_{old}}(x) = \hat{y}_{old} \neq t
-```
+$$
+f_{\theta_{old}}(x) \neq t
+$$
 
 ---
 
 ## Target 定義
 
-本次 editing 的 target 是正確答案：
+本次 editing 的目標答案為：
 
-```math
+$$
 t = \text{radiculopathy}
-```
+$$
 
-模型更新的目標是讓：
+我們希望更新權重後，模型對同一個輸入 `x` 的輸出變成：
 
-```math
+$$
 f_{\theta_{new}}(x) = t
-```
+$$
 
 也就是：
 
-```math
+$$
 f_{\theta_{new}}(x) = \text{radiculopathy}
-```
+$$
 
 ---
 
 ## Loss Function
 
-為了提高模型在輸入 `x` 時產生 target `t` 的機率，定義 negative log-likelihood loss：
+為了讓模型更傾向輸出正確 target `t`，使用 negative log-likelihood loss：
 
-```math
-\mathcal{L}(\theta)
-=
--\log P_{\theta}(t \mid x)
-```
+$$
+\mathcal{L}(\theta) = -\log P_{\theta}(t \mid x)
+$$
 
 其中：
 
-```math
+$$
 P_{\theta}(t \mid x)
+$$
+
+代表模型在輸入 `x` 時，輸出 target `t` 的機率。
+
+在本次實驗中：
+
+$$
+t = \text{radiculopathy}
+$$
+
+所以 loss 可以理解為：
+
+$$
+\mathcal{L}(\theta) = -\log P_{\theta}(\text{radiculopathy} \mid x)
+$$
+
+當 loss 越小，代表模型越傾向輸出：
+
+```text
+radiculopathy
 ```
-
-代表模型在參數 `θ` 下，對輸入 `x` 產生正確答案 `t` 的條件機率。
-
-若 target `t` 被 tokenizer 拆成多個 token：
-
-```math
-t = (t_1, t_2, \dots, t_n)
-```
-
-則 loss 可展開為：
-
-```math
-\mathcal{L}(\theta)
-=
--\sum_{i=1}^{n}
-\log P_{\theta}(t_i \mid x, t_{<i})
-```
-
-其中：
-
-```math
-t_{<i} = (t_1, t_2, \dots, t_{i-1})
-```
-
-這表示模型要在每一個生成位置上，提高正確 target token 的機率。
 
 ---
 
-## Weight Update
+## 基本反向傳播與權重更新
 
-權重更新使用 masked gradient descent。  
-先計算 target loss：
+模型會先計算 loss：
 
-```math
-\mathcal{L}(\theta_{old})
-=
--\log P_{\theta_{old}}(t \mid x)
+$$
+\mathcal{L}(\theta)
+$$
+
+接著用微分計算 loss 對權重的梯度：
+
+$$
+\nabla_{\theta}\mathcal{L}(\theta)
+$$
+
+這個梯度代表：
+
+```text
+如果要讓 loss 下降，權重應該往哪個方向修改
 ```
 
-再根據 loss 對模型權重計算梯度：
+因此使用梯度下降更新權重：
 
-```math
-\nabla_{\theta}\mathcal{L}(\theta_{old})
-```
-
-由於本次只希望保留 allowed update token ids 對應的梯度分量，因此加入 mask：
-
-```math
+$$
 \theta_{new}
 =
 \theta_{old}
 -
-\eta \,
-\mathrm{Mask}
-\left(
-\nabla_{\theta}
-\mathcal{L}(\theta_{old})
-\right)
-```
+\eta \nabla_{\theta}\mathcal{L}(\theta_{old})
+$$
 
 其中：
 
-```math
+$$
+\theta_{old}
+$$
+
+是更新前的模型權重。
+
+$$
+\theta_{new}
+$$
+
+是更新後的模型權重。
+
+$$
 \eta
-```
+$$
 
 是 learning rate。
 
-```math
-\mathrm{Mask}(\cdot)
+$$
+\nabla_{\theta}\mathcal{L}(\theta_{old})
+$$
+
+是 loss 對模型權重的梯度。
+
+---
+
+## 加入 Mask 的權重更新
+
+本次更新有使用 allowed token mask，因此只保留允許更新的梯度部分。
+
+權重更新可寫成：
+
+$$
+\theta_{new}
+=
+\theta_{old}
+-
+\eta \, \mathrm{Mask}
+\left(
+\nabla_{\theta}\mathcal{L}(\theta_{old})
+\right)
+$$
+
+也就是：
+
+```text
+先計算 loss
+再反向傳播得到梯度
+接著用 Mask 保留需要的梯度
+最後更新模型權重
 ```
 
-代表只保留允許更新的梯度分量，降低非目標 token 對權重更新的影響。
+權重變化量可以表示為：
 
-權重實際變化量為：
-
-```math
+$$
 \Delta \theta
 =
 \theta_{new} - \theta_{old}
-```
+$$
 
 因此：
 
-```math
+$$
 \Delta \theta
 =
 -
-\eta \,
-\mathrm{Mask}
+\eta \, \mathrm{Mask}
 \left(
-\nabla_{\theta}
-\mathcal{L}(\theta_{old})
+\nabla_{\theta}\mathcal{L}(\theta_{old})
 \right)
-```
+$$
 
-每一步 log 中的 `update norm` 可以理解為：
+log 中的 `update norm` 可以理解為：
 
-```math
+$$
 \|\Delta \theta\|
-```
+$$
 
-也就是該步驟模型權重實際被修改的幅度。
+也就是每一步權重實際被修改的幅度。
 
 ---
 
 ## Loss 收斂結果
 
-本次 feedback editing 共進行 30 steps。  
-loss 從一開始的：
+本次 feedback editing 的 loss 從：
 
-```math
-\mathcal{L}(\theta_0) = 2.705394
-```
+$$
+2.705394
+$$
 
-下降到最後的：
+下降到：
 
-```math
-\mathcal{L}(\theta_{30}) = 0.000008
-```
+$$
+0.000008
+$$
 
 可表示為：
 
-```math
+$$
 2.705394 \rightarrow 0.000008
-```
+$$
 
-loss 收斂過程如下：
+loss 過程如下：
 
 ```text
 Step  1 | loss = 2.705394
@@ -252,36 +279,22 @@ Step 30 | loss = 0.000008
 
 因為 loss 定義為：
 
-```math
-\mathcal{L}(\theta)
-=
--\log P_{\theta}(t \mid x)
-```
+$$
+\mathcal{L}(\theta) = -\log P_{\theta}(t \mid x)
+$$
 
-所以當 loss 持續下降時，代表：
+所以當 loss 下降時，代表：
 
-```math
+$$
 P_{\theta}(t \mid x)
-```
+$$
 
-正在提高。
+正在上升。
 
-當最後：
+也就是模型越來越傾向輸出正確 target：
 
-```math
-\mathcal{L}(\theta_{30}) \approx 0
-```
-
-表示：
-
-```math
-P_{\theta_{30}}(t \mid x) \approx 1
-```
-
-也就是模型在更新後，已經高度傾向於對輸入 `x` 輸出 target：
-
-```math
-t = \text{radiculopathy}
+```text
+radiculopathy
 ```
 
 ---
@@ -298,29 +311,33 @@ Correct: YES
 
 也就是：
 
-```math
-f_{\theta_{new}}(x) = t
+$$
+f_{\theta_{new}}(x) = \text{radiculopathy}
+$$
+
+因此模型從原本的錯誤輸出：
+
+```text
+cervical spondylosis
 ```
 
-更具體地：
+被修正為正確 target：
 
-```math
-f_{\theta_{new}}(x)
-=
-\text{radiculopathy}
+```text
+radiculopathy
 ```
 
 ---
 
 ## 總結
 
-本次 editing 可以簡化表示為：
+本次方法可以簡化為：
 
 ```text
 更新前：
 x → cervical spondylosis
 
-target：
+正確 target：
 t = radiculopathy
 
 loss：
@@ -333,67 +350,24 @@ L(θ) = -log Pθ(t | x)
 x → radiculopathy
 ```
 
-因此，本次方法的核心是：
+其中最重要的是：
 
-```math
-\hat{y}_{old}
-=
-\text{cervical spondylosis}
-\neq
-t
-=
-\text{radiculopathy}
-```
+$$
+t = \text{radiculopathy}
+$$
 
-透過最小化：
+也就是本次 feedback editing 的 target 是正確答案 `radiculopathy`。
 
-```math
--\log P_{\theta}(t \mid x)
-```
+最終 loss 從：
 
-並更新權重：
-
-```math
-\theta_{new}
-=
-\theta_{old}
--
-\eta \,
-\mathrm{Mask}
-\left(
-\nabla_{\theta}
-\left[
--\log P_{\theta_{old}}(t \mid x)
-\right]
-\right)
-```
-
-最終讓模型由：
-
-```math
-f_{\theta_{old}}(x)
-=
-\text{cervical spondylosis}
-```
-
-修正為：
-
-```math
-f_{\theta_{new}}(x)
-=
-\text{radiculopathy}
-```
-
-loss 從：
-
-```math
+$$
 2.705394
-```
+$$
 
-收斂到：
+下降到：
 
-```math
+$$
 0.000008
-```
+$$
 
-表示模型對正確 target `radiculopathy` 的生成機率已經大幅提升，權重修正成功。
+表示模型對 target `radiculopathy` 的生成機率大幅提高，權重修正成功。
